@@ -1,6 +1,8 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using Object = UnityEngine.Object;
 
 public class PrefabFolderViewer : EditorWindow
 {
@@ -324,8 +326,24 @@ public class PrefabFolderViewer : EditorWindow
         GameObject selectedGameObject = Selection.activeGameObject;
         if (selectedGameObject == null)
             return;
-        
-        PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, InteractionMode.UserAction);
+
+        try
+        {
+            PrefabReplacingSettings prefabReplacingSettings = new PrefabReplacingSettings();
+            prefabReplacingSettings.changeRootNameToAssetName = false;
+            
+            PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, prefabReplacingSettings,InteractionMode.UserAction);
+        }
+        catch (Exception e)
+        {
+            ConvertToPrefabInstanceSettings convertToPrefabInstanceSettings = new ConvertToPrefabInstanceSettings();
+            convertToPrefabInstanceSettings.componentsNotMatchedBecomesOverride = true;
+            convertToPrefabInstanceSettings.gameObjectsNotMatchedBecomesOverride = true;
+            convertToPrefabInstanceSettings.changeRootNameToAssetName = false;
+            convertToPrefabInstanceSettings.recordPropertyOverridesOfMatches = true;
+            
+            PrefabUtility.ConvertToPrefabInstance(selectedGameObject, prefab, convertToPrefabInstanceSettings,InteractionMode.UserAction);;
+        }
     }
     
     private void DrawPrefab(GameObject prefab)
