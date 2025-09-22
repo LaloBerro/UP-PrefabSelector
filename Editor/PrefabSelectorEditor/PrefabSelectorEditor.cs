@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
 public class PrefabFolderViewer : EditorWindow
@@ -35,7 +36,7 @@ public class PrefabFolderViewer : EditorWindow
     {
         Selection.selectionChanged += OnSelectionChanged;
         EditorApplication.update += UpdatePreviews;
-        
+
         RefreshIfSelectionIsFolder();
     }
 
@@ -51,7 +52,7 @@ public class PrefabFolderViewer : EditorWindow
         {
             _parentTransForm = Selection.activeTransform;
         }
-        
+
         RefreshIfSelectionIsFolder();
         Repaint();
     }
@@ -62,22 +63,22 @@ public class PrefabFolderViewer : EditorWindow
         bool hasSavedPath = PlayerPrefs.HasKey("PrefabFolder_FolderPath");
         if (selectedGameObject == null && !hasSavedPath)
             return;
-        
+
         string path = "";
-        if(selectedGameObject != null)
+        if (selectedGameObject != null)
             path = AssetDatabase.GetAssetPath(selectedGameObject);
-        else if(hasSavedPath)
+        else if (hasSavedPath)
             path = PlayerPrefs.GetString("PrefabFolder_FolderPath");
-        
-        if (string.IsNullOrEmpty(path)) 
+
+        if (string.IsNullOrEmpty(path))
             return;
 
-        if (!AssetDatabase.IsValidFolder(path)) 
+        if (!AssetDatabase.IsValidFolder(path))
             return;
-        
+
         _folderPath = path;
         LoadPrefabsFromFolder(path);
-        
+
         PlayerPrefs.SetString("PrefabFolder_FolderPath", path);
     }
 
@@ -85,20 +86,20 @@ public class PrefabFolderViewer : EditorWindow
     {
         if (string.IsNullOrEmpty(path))
             return;
-        
+
         _prefabsByFolder.Clear();
         _hasToShowFolderValues.Clear();
         _previews.Clear();
         _totalPrefabs = 0;
-        
+
         string filter = "t:Prefab";
         string[] guids;
-        
+
         guids = AssetDatabase.FindAssets(filter, new[] { path });
-        
+
         if (guids == null || guids.Length == 0)
             return;
-        
+
         foreach (var guid in guids)
         {
             AddPrefabByGUID(guid);
@@ -110,11 +111,11 @@ public class PrefabFolderViewer : EditorWindow
         string assetPath = AssetDatabase.GUIDToAssetPath(guid);
         GameObject gameObject = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
 
-        if (gameObject == null) 
+        if (gameObject == null)
             return;
-            
+
         _totalPrefabs++;
-                
+
         string assetFolderPath = System.IO.Path.GetDirectoryName(assetPath);
         if (_prefabsByFolder.ContainsKey(assetFolderPath))
             _prefabsByFolder[assetFolderPath].Add(gameObject);
@@ -134,35 +135,132 @@ public class PrefabFolderViewer : EditorWindow
             foreach (var prefab in prefabs)
             {
                 string path = AssetDatabase.GetAssetPath(prefab);
-                if (_previews.ContainsKey(path) && _previews[path] != null) 
+                if (_previews.ContainsKey(path) && _previews[path] != null)
                     continue;
-            
+
                 Texture2D previewTexture2D = AssetPreview.GetAssetPreview(prefab);
-                if (previewTexture2D == null)
+                if (previewTexture2D == null && prefab.GetComponent<RectTransform>() != null)
+                {
+                    previewTexture2D = RenderUIPrefabPreview(prefab, ThumbSize);
+                }
+                else if (previewTexture2D == null)
                     previewTexture2D = AssetPreview.GetMiniThumbnail(prefab);
-                
+
                 _previews[path] = previewTexture2D;
                 hasToRepaint = true;
             }
         }
-        
+
         if (hasToRepaint)
             Repaint();
+    }
+
+    private Texture2D RenderUIPrefabPreview(GameObject prefab, int size)
+    {
+        try
+        {
+            const int previewLayer = 31;
+
+            // root canvas
+            GameObject root = new GameObject("__PreviewCanvasRoot", typeof(Canvas), typeof(CanvasScaler),
+                typeof(GraphicRaycaster));
+            root.hideFlags = HideFlags.HideAndDontSave;
+            Canvas canvas = root.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+
+            // camera
+            GameObject cameraGameObject = new GameObject("__PreviewCam");
+            cameraGameObject.hideFlags = HideFlags.HideAndDontSave;
+            Camera camera = cameraGameObject.AddComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.Color;
+            camera.backgroundColor = Color.clear;
+            camera.orthographic = true;
+            camera.cullingMask = 1 << previewLayer;
+            camera.allowHDR = false;
+            camera.allowMSAA = false;
+
+            canvas.worldCamera = camera;
+
+            // make sure canvas has a reasonable size
+            RectTransform canvasRect = root.GetComponent<RectTransform>();
+            canvasRect.sizeDelta = new Vector2(size, size);
+            CanvasScaler scaler = root.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(size, size);
+
+            // set layers
+            SetLayerRecursively(root, previewLayer);
+
+            // instantiate prefab
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            if (instance == null)
+            {
+                DestroyImmediate(root);
+                DestroyImmediate(cameraGameObject);
+                return null;
+            }
+
+            instance.hideFlags = HideFlags.HideAndDontSave;
+            instance.transform.SetParent(root.transform, false);
+            SetLayerRecursively(instance, previewLayer);
+
+            // center rect transforms so they appear in view
+            foreach (var rectTransform in instance.GetComponentsInChildren<RectTransform>(true))
+            {
+                rectTransform.anchoredPosition = Vector2.zero;
+            }
+
+            // position camera
+            camera.transform.position = new Vector3(0, 0, -10f);
+            camera.orthographicSize = size * 0.5f;
+
+            // render
+            RenderTexture renderTexture = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
+            camera.targetTexture = renderTexture;
+            camera.Render();
+
+            RenderTexture.active = renderTexture;
+            Texture2D texture2D = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture2D.ReadPixels(new Rect(0, 0, size, size), 0, 0);
+            texture2D.Apply();
+
+            // cleanup
+            RenderTexture.active = null;
+            camera.targetTexture = null;
+            renderTexture.Release();
+            DestroyImmediate(instance);
+            DestroyImmediate(cameraGameObject);
+            DestroyImmediate(root);
+
+            return texture2D;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("UI preview generation failed: " + e.Message);
+            return null;
+        }
+    }
+
+    private void SetLayerRecursively(GameObject go, int layer)
+    {
+        go.layer = layer;
+        foreach (Transform t in go.transform)
+            SetLayerRecursively(t.gameObject, layer);
     }
 
     private void OnGUI()
     {
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
         _modeIndex = EditorGUILayout.Popup(_modeIndex, _modeOptions);
-        
+
         _hasToDisplayAsList = GUILayout.Toggle(_hasToDisplayAsList, "Display as List", EditorStyles.toolbarButton);
-        
+
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton))
         {
             if (!string.IsNullOrEmpty(_folderPath))
                 LoadPrefabsFromFolder(_folderPath);
         }
-        
+
         if (GUILayout.Button("Expand all", EditorStyles.toolbarButton))
         {
             List<string> keys = new List<string>(_hasToShowFolderValues.Keys);
@@ -171,7 +269,7 @@ public class PrefabFolderViewer : EditorWindow
                 _hasToShowFolderValues[key] = true;
             }
         }
-        
+
         if (GUILayout.Button("Hide all", EditorStyles.toolbarButton))
         {
             List<string> keys = new List<string>(_hasToShowFolderValues.Keys);
@@ -180,7 +278,7 @@ public class PrefabFolderViewer : EditorWindow
                 _hasToShowFolderValues[key] = false;
             }
         }
-        
+
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
@@ -189,17 +287,18 @@ public class PrefabFolderViewer : EditorWindow
         if (_modeOptions[_modeIndex] == PrefabSelectorMode)
         {
             EditorGUILayout.BeginVertical("Box");
-            
-            _mustSetSelectedAsParent = EditorGUILayout.Toggle("Parent is the selected object", _mustSetSelectedAsParent);
+
+            _mustSetSelectedAsParent =
+                EditorGUILayout.Toggle("Parent is the selected object", _mustSetSelectedAsParent);
             if (_mustSetSelectedAsParent)
             {
                 _parentTransForm = Selection.activeTransform;
             }
-            
+
             _parentTransForm = (Transform)EditorGUILayout.ObjectField("Parent", _parentTransForm, typeof(Transform));
-            
+
             EditorGUILayout.EndVertical();
-            
+
             EditorGUILayout.Space();
         }
 
@@ -223,7 +322,7 @@ public class PrefabFolderViewer : EditorWindow
     }
 
     private void DisplayPrefabsByFolder(string folderPath, List<GameObject> prefabs, int columnCount, int rows)
-    { 
+    {
         bool hasToShowFoldout = _hasToShowFolderValues[folderPath];
         string foldoutName = folderPath.Substring("Assets/".Length);
         hasToShowFoldout = EditorGUILayout.BeginFoldoutHeaderGroup(hasToShowFoldout, foldoutName);
@@ -238,7 +337,7 @@ public class PrefabFolderViewer : EditorWindow
         if (!_hasToDisplayAsList)
         {
             EditorGUILayout.BeginVertical("Box");
-        
+
             int index = 0;
             int totalPrefabs = prefabs.Count;
             for (int row = 0; row < rows; row++)
@@ -246,33 +345,34 @@ public class PrefabFolderViewer : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 for (int column = 0; column < columnCount; column++)
                 {
-                    if (index >= totalPrefabs) 
+                    if (index >= totalPrefabs)
                         break;
-                
+
                     DrawPrefabWithPreview(prefabs[index]);
                     index++;
                 }
+
                 EditorGUILayout.EndHorizontal();
-            
-                if (index >= totalPrefabs) 
+
+                if (index >= totalPrefabs)
                     break;
-            } 
-        
+            }
+
             EditorGUILayout.EndVertical();
         }
         else
         {
             EditorGUILayout.BeginVertical("Box");
-            
+
             foreach (var prefab in prefabs)
             {
                 DrawPrefab(prefab);
                 EditorGUILayout.Space(2f);
             }
-            
+
             EditorGUILayout.EndVertical();
         }
-        
+
         EditorGUILayout.EndFoldoutHeaderGroup();
     }
 
@@ -318,17 +418,17 @@ public class PrefabFolderViewer : EditorWindow
             Debug.LogError("Parent is null. Please select one.");
             return;
         }
-        
+
         GameObject gameObject = Instantiate(prefab, _parentTransForm);
         gameObject.name = prefab.name;
-        
+
         Undo.RegisterCreatedObjectUndo(gameObject, "Create " + gameObject.name);
-        
+
         Selection.activeGameObject = gameObject;
-        
+
         EditorUtility.SetDirty(_parentTransForm);
     }
-    
+
     private void SelectPrefabOnReplaceMode(GameObject prefab)
     {
         GameObject selectedGameObject = Selection.activeGameObject;
@@ -339,8 +439,9 @@ public class PrefabFolderViewer : EditorWindow
         {
             PrefabReplacingSettings prefabReplacingSettings = new PrefabReplacingSettings();
             prefabReplacingSettings.changeRootNameToAssetName = false;
-            
-            PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, prefabReplacingSettings,InteractionMode.UserAction);
+
+            PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, prefabReplacingSettings,
+                InteractionMode.UserAction);
         }
         catch (Exception e)
         {
@@ -349,11 +450,13 @@ public class PrefabFolderViewer : EditorWindow
             convertToPrefabInstanceSettings.gameObjectsNotMatchedBecomesOverride = true;
             convertToPrefabInstanceSettings.changeRootNameToAssetName = false;
             convertToPrefabInstanceSettings.recordPropertyOverridesOfMatches = true;
-            
-            PrefabUtility.ConvertToPrefabInstance(selectedGameObject, prefab, convertToPrefabInstanceSettings,InteractionMode.UserAction);;
+
+            PrefabUtility.ConvertToPrefabInstance(selectedGameObject, prefab, convertToPrefabInstanceSettings,
+                InteractionMode.UserAction);
+            ;
         }
     }
-    
+
     private void DrawPrefab(GameObject prefab)
     {
         EditorGUILayout.BeginHorizontal();
@@ -361,12 +464,12 @@ public class PrefabFolderViewer : EditorWindow
         GUIContent content = EditorGUIUtility.IconContent("d_ViewToolOrbit On");
         if (GUILayout.Button(content, GUILayout.Width(20), GUILayout.Height(20)))
             EditorGUIUtility.PingObject(prefab);
-        
+
         GUIStyle leftButton = new GUIStyle(GUI.skin.button);
         leftButton.alignment = TextAnchor.MiddleLeft;
         if (GUILayout.Button(prefab.name, leftButton))
             SelectPrefab(prefab);
-        
+
         EditorGUILayout.EndHorizontal();
     }
 }
