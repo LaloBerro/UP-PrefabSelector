@@ -1,7 +1,7 @@
 {
-  "name": "com..",
+  "name": "com.lalo.prefabselector",
   "version": "1.0.0",
-  "displayName": "",
+  "displayName": "Prefab Selector Editor",
   "description": "",
   "unity": "2020.3",
   "unityRelease": "0b5",
@@ -11,7 +11,7 @@
   "keywords": [
   ],
   "author": {
-    "name": "",
+    "name": "Lalo",
     "email": "",
     "url": ""
   },
