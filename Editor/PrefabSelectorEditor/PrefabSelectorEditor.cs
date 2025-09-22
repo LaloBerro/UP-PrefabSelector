@@ -59,10 +59,16 @@ public class PrefabFolderViewer : EditorWindow
     private void RefreshIfSelectionIsFolder()
     {
         Object selectedGameObject = Selection.activeObject;
-        if (selectedGameObject == null) 
+        bool hasSavedPath = PlayerPrefs.HasKey("PrefabFolder_FolderPath");
+        if (selectedGameObject == null && !hasSavedPath)
             return;
         
-        string path = AssetDatabase.GetAssetPath(selectedGameObject);
+        string path = "";
+        if(selectedGameObject != null)
+            path = AssetDatabase.GetAssetPath(selectedGameObject);
+        else if(hasSavedPath)
+            path = PlayerPrefs.GetString("PrefabFolder_FolderPath");
+        
         if (string.IsNullOrEmpty(path)) 
             return;
 
@@ -71,6 +77,8 @@ public class PrefabFolderViewer : EditorWindow
         
         _folderPath = path;
         LoadPrefabsFromFolder(path);
+        
+        PlayerPrefs.SetString("PrefabFolder_FolderPath", path);
     }
 
     private void LoadPrefabsFromFolder(string path)
