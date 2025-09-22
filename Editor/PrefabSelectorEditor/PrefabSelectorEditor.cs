@@ -10,6 +10,7 @@ public class PrefabFolderViewer : EditorWindow
     private Dictionary<string, bool> _hasToShowFolderValues = new Dictionary<string, bool>();
     private Dictionary<string, Texture2D> _previews = new Dictionary<string, Texture2D>();
     private int _totalPrefabs;
+    private bool _hasToDisplayAsList;
 
     private bool _mustSetSelectedAsParent;
     private Transform _parentTransForm;
@@ -18,7 +19,7 @@ public class PrefabFolderViewer : EditorWindow
     const string PrefabReplacerMode = "Replacer Mode";
     private string[] _modeOptions = new string[] { PrefabSelectorMode, PrefabReplacerMode };
 
-    private const int ThumbSize = 80;
+    private const int ThumbSize = 70;
     private const int Padding = 8;
 
     [MenuItem("Tools/Prefab Selector")]
@@ -144,6 +145,8 @@ public class PrefabFolderViewer : EditorWindow
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
         _modeIndex = EditorGUILayout.Popup(_modeIndex, _modeOptions);
         
+        _hasToDisplayAsList = GUILayout.Toggle(_hasToDisplayAsList, "Display as List", EditorStyles.toolbarButton);
+        
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton))
         {
             if (!string.IsNullOrEmpty(_folderPath))
@@ -221,33 +224,49 @@ public class PrefabFolderViewer : EditorWindow
             EditorGUILayout.EndFoldoutHeaderGroup();
             return;
         }
-        
-        EditorGUILayout.BeginVertical("Box");
-        
-        int index = 0;
-        int totalPrefabs = prefabs.Count;
-        for (int row = 0; row < rows; row++)
+
+        if (!_hasToDisplayAsList)
         {
-            EditorGUILayout.BeginHorizontal();
-            for (int column = 0; column < columnCount; column++)
+            EditorGUILayout.BeginVertical("Box");
+        
+            int index = 0;
+            int totalPrefabs = prefabs.Count;
+            for (int row = 0; row < rows; row++)
             {
+                EditorGUILayout.BeginHorizontal();
+                for (int column = 0; column < columnCount; column++)
+                {
+                    if (index >= totalPrefabs) 
+                        break;
+                
+                    DrawPrefabWithPreview(prefabs[index]);
+                    index++;
+                }
+                EditorGUILayout.EndHorizontal();
+            
                 if (index >= totalPrefabs) 
                     break;
-                
-                DrawPrefabEntry(prefabs[index]);
-                index++;
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            if (index >= totalPrefabs) 
-                break;
-        } 
+            } 
         
-        EditorGUILayout.EndVertical();
+            EditorGUILayout.EndVertical();
+        }
+        else
+        {
+            EditorGUILayout.BeginVertical("Box");
+            
+            foreach (var prefab in prefabs)
+            {
+                DrawPrefab(prefab);
+                EditorGUILayout.Space(2f);
+            }
+            
+            EditorGUILayout.EndVertical();
+        }
+        
         EditorGUILayout.EndFoldoutHeaderGroup();
     }
 
-    private void DrawPrefabEntry(GameObject prefab)
+    private void DrawPrefabWithPreview(GameObject prefab)
     {
         string path = AssetDatabase.GetAssetPath(prefab);
         _previews.TryGetValue(path, out Texture2D previewTexture2D);
@@ -265,7 +284,9 @@ public class PrefabFolderViewer : EditorWindow
                 SelectPrefab(prefab);
         }
 
-        if (GUILayout.Button(prefab.name, EditorStyles.linkLabel, GUILayout.Width(ThumbSize)))
+        GUIStyle style = new GUIStyle(EditorStyles.label);
+        style.wordWrap = true;
+        if (GUILayout.Button(prefab.name, style, GUILayout.Width(ThumbSize)))
             EditorGUIUtility.PingObject(prefab);
 
         EditorGUILayout.EndVertical();
@@ -305,5 +326,21 @@ public class PrefabFolderViewer : EditorWindow
             return;
         
         PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, InteractionMode.UserAction);
+    }
+    
+    private void DrawPrefab(GameObject prefab)
+    {
+        EditorGUILayout.BeginHorizontal();
+
+        GUIContent content = EditorGUIUtility.IconContent("d_ViewToolOrbit On");
+        if (GUILayout.Button(content, GUILayout.Width(20), GUILayout.Height(20)))
+            EditorGUIUtility.PingObject(prefab);
+        
+        GUIStyle leftButton = new GUIStyle(GUI.skin.button);
+        leftButton.alignment = TextAnchor.MiddleLeft;
+        if (GUILayout.Button(prefab.name, leftButton))
+            SelectPrefab(prefab);
+        
+        EditorGUILayout.EndHorizontal();
     }
 }
