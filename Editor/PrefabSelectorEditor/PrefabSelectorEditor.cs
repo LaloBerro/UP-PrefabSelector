@@ -162,14 +162,13 @@ public class PrefabFolderViewer : EditorWindow
             const int previewLayer = 31;
 
             // root canvas
-            GameObject root = new GameObject("__PreviewCanvasRoot", typeof(Canvas), typeof(CanvasScaler),
-                typeof(GraphicRaycaster));
+            GameObject root = new GameObject("__PreviewCanvasRoot", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             root.hideFlags = HideFlags.HideAndDontSave;
             Canvas canvas = root.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceCamera;
 
             // camera
-            GameObject cameraGameObject = new GameObject("__PreviewCam");
+            GameObject cameraGameObject = new GameObject("PreviewCamera");
             cameraGameObject.hideFlags = HideFlags.HideAndDontSave;
             Camera camera = cameraGameObject.AddComponent<Camera>();
             camera.clearFlags = CameraClearFlags.Color;
@@ -241,11 +240,11 @@ public class PrefabFolderViewer : EditorWindow
         }
     }
 
-    private void SetLayerRecursively(GameObject go, int layer)
+    private void SetLayerRecursively(GameObject gameObject, int layer)
     {
-        go.layer = layer;
-        foreach (Transform t in go.transform)
-            SetLayerRecursively(t.gameObject, layer);
+        gameObject.layer = layer;
+        foreach (Transform transform in gameObject.transform)
+            SetLayerRecursively(transform.gameObject, layer);
     }
 
     private void OnGUI()
@@ -418,8 +417,9 @@ public class PrefabFolderViewer : EditorWindow
             Debug.LogError("Parent is null. Please select one.");
             return;
         }
-
-        GameObject gameObject = Instantiate(prefab, _parentTransForm);
+        
+        GameObject gameObject = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+        gameObject.transform.SetParent(_parentTransForm, false);
         gameObject.name = prefab.name;
 
         Undo.RegisterCreatedObjectUndo(gameObject, "Create " + gameObject.name);
@@ -440,8 +440,7 @@ public class PrefabFolderViewer : EditorWindow
             PrefabReplacingSettings prefabReplacingSettings = new PrefabReplacingSettings();
             prefabReplacingSettings.changeRootNameToAssetName = false;
 
-            PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, prefabReplacingSettings,
-                InteractionMode.UserAction);
+            PrefabUtility.ReplacePrefabAssetOfPrefabInstance(selectedGameObject, prefab, prefabReplacingSettings, InteractionMode.UserAction);
         }
         catch (Exception e)
         {
@@ -451,9 +450,7 @@ public class PrefabFolderViewer : EditorWindow
             convertToPrefabInstanceSettings.changeRootNameToAssetName = false;
             convertToPrefabInstanceSettings.recordPropertyOverridesOfMatches = true;
 
-            PrefabUtility.ConvertToPrefabInstance(selectedGameObject, prefab, convertToPrefabInstanceSettings,
-                InteractionMode.UserAction);
-            ;
+            PrefabUtility.ConvertToPrefabInstance(selectedGameObject, prefab, convertToPrefabInstanceSettings, InteractionMode.UserAction);
         }
     }
 
